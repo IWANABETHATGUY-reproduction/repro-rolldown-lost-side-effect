@@ -1,0 +1,10 @@
+{
+  "name": "repro-rolldown-lost-side-effect",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "rolldown": "1.2.13",
+    "rolldown-rc17": "npm:rolldown@1.0.0-rc.17",
+    "rolldown-latest": "npm:rolldown@1.2.14"
+  }
+}
