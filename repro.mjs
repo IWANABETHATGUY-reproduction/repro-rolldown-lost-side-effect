@@ -9,7 +9,7 @@ import webpack from "webpack";
 const cwd = import.meta.dirname;
 const only = process.argv.slice(2);
 const entries = ["direct", "barrel"];
-// `empty` is `lib/` as is. Every other variant overwrites files in a copy of `lib/` with `variants/<name>/`.
+// `empty` uses `lib/` with no changes. For each other variant, the files in `variants/<name>/` replace the files at the same paths in `dist/<name>/`.
 const variants = ["empty", "return", "literal", "fix-side-effects", "fix-import"];
 
 const bundlers = {
@@ -70,7 +70,8 @@ for (const variant of variants) {
         await import(file);
         results.push("OK");
       } catch (error) {
-        // `globalThis.expo.EventEmitter` with no polyfill: "Cannot read properties of undefined (reading 'EventEmitter')".
+        // With no polyfill, `globalThis.expo.EventEmitter` throws a TypeError: "Cannot read properties of undefined (reading 'EventEmitter')".
+        // Throw errors of all other types.
         if (!(error instanceof TypeError)) throw error;
         results.push("FAIL");
       }

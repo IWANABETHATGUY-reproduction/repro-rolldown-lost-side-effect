@@ -1,4 +1,4 @@
-# A polyfill dropped behind an empty-function call: not a rolldown bug
+# Why rolldown removes the polyfill, and why it is not a bug
 
 ```js
 // lib/package.json: { "sideEffects": ["./src/polyfill/*.js"] }
@@ -13,35 +13,49 @@ ensure();
 export const EventEmitter = globalThis.expo.EventEmitter;
 ```
 
-- `ensure()` is empty → call dropped.
-- `ensure.js` now unused and side-effect-free → dropped, with the polyfill.
-- `emitter.js` reads `globalThis.expo` before anything sets it.
-- Same shape as `expo-modules-core` on web (`EventEmitter.ts` → `ensureNativeModulesAreInstalled.ts` → `polyfill/index.web.ts`).
+rolldown makes these decisions:
+
+1. `ensure()` is empty, so rolldown removes the call `ensure();`.
+2. After that, no code uses the exports of `ensure.js`.
+3. The `sideEffects` field in `lib/package.json` does not list `ensure.js`, so `ensure.js` is side-effect-free. A bundler can remove a side-effect-free module when no code uses its exports.
+4. rolldown removes `ensure.js`. No other module in the bundle imports the polyfill, so rolldown removes the polyfill too.
+5. `emitter.js` reads `globalThis.expo`, but no code in the bundle sets it. Thus the bundle throws a `TypeError`.
+
+`expo-modules-core` has the same structure on web:
+
+| This repo | `expo-modules-core` |
+|---|---|
+| `lib/src/emitter.js` | `EventEmitter.ts` |
+| `lib/src/ensure.js` | `ensureNativeModulesAreInstalled.ts` |
+| `lib/src/polyfill/index.js` | `polyfill/index.web.ts` |
+| `lib/src/index.js` | `index.ts` |
 
 ## Root cause
 
-`sideEffects` marks `ensure.js` as side-effect-free, but `ensure.js` exists only to load the polyfill. The library's `sideEffects` list is wrong, not the bundler.
+The `sideEffects` field does not list `ensure.js`. But the only purpose of `ensure.js` is to load the polyfill, and that is a side effect. Thus the `sideEffects` field of the library is wrong. The bundlers are correct.
 
 ## Run
 
 ```sh
 pnpm install
-node repro.mjs            # every bundler
-node repro.mjs rolldown   # one bundler
+node repro.mjs            # run all bundlers
+node repro.mjs rolldown   # run only rolldown
 ```
 
-Entries:
+The repro has two entries:
 
-- `direct.js`: imports `emitter.js` directly.
-- `barrel.js`: through `lib/src/index.js`, a side-effect-free barrel that also imports the polyfill (as `expo-modules-core`'s `index.ts`).
+- `direct.js` imports `emitter.js` directly.
+- `barrel.js` imports `emitter.js` through `lib/src/index.js`. `lib/src/index.js` is a barrel file: a module that collects the exports of other modules. It is side-effect-free, and it also imports the polyfill.
 
-Variants (each one is a copy of `lib/` with the files in `variants/<name>/`):
+For each variant, `repro.mjs` copies `lib/`, `direct.js` and `barrel.js` into `dist/<variant>/`. Then the files in `variants/<variant>/` replace the files at the same paths.
 
-- `empty`: `lib/` as is.
-- `return`: `ensure()` returns `100`.
-- `literal`: `export const ensure = 1000;`, and `emitter.js` has `ensure;` in place of `ensure();`.
-- `fix-side-effects`: `./src/ensure.js` added to `sideEffects`.
-- `fix-import`: `emitter.js` imports the polyfill directly.
+| Variant | Change to `lib/` |
+|---|---|
+| `empty` | No change. |
+| `return` | `ensure()` returns `100`. |
+| `literal` | `ensure.js` has `export const ensure = 1000;`. `emitter.js` has `ensure;` instead of `ensure();`. |
+| `fix-side-effects` | The `sideEffects` field also lists `./src/ensure.js`. |
+| `fix-import` | `emitter.js` also imports the polyfill directly. |
 
 ## Result
 
@@ -61,30 +75,47 @@ fix-import        direct  OK        OK               OK      OK       OK        
 fix-import        barrel  OK        OK               OK      OK       OK              OK
 ```
 
-- `FAIL`: `Cannot read properties of undefined (reading 'EventEmitter')`.
-- `rolldown strict`: `output.strictExecutionOrder: true`. `esbuild minify`: `minifySyntax: true`. `webpack`: `mode: "production"`.
-- rollup reads `sideEffects` through `@rollup/plugin-node-resolve`.
+- `OK` means that the bundle runs with no error.
+- `FAIL` means that the bundle throws a `TypeError`: `Cannot read properties of undefined (reading 'EventEmitter')`.
+
+| Column | Options |
+|---|---|
+| `rolldown` | Default options. |
+| `rolldown strict` | `output.strictExecutionOrder: true`. |
+| `rollup` | `@rollup/plugin-node-resolve`, which reads the `sideEffects` field. |
+| `esbuild` | `bundle: true`. |
+| `esbuild minify` | `bundle: true`, `minifySyntax: true`. |
+| `webpack` | `mode: "production"`. |
 
 ## Why it is not a bug
 
-- All four bundlers use the same `sideEffects` rule: a side-effect-free module with no used exports is dropped, and its imports go with it.
-- They differ only on one question: does `ensure()` use `ensure`?
-  - rolldown and esbuild `minifySyntax` drop a call to an empty function. In `return` the function is not empty, so they keep the call.
-  - rollup drops any call that has no side effect and whose result is unused, so `return` does not help.
-  - webpack and esbuild do not look into function bodies. They count the call as a use, so they keep `ensure.js` and the polyfill.
-- `literal` has no function body to look into. No bundler counts `ensure;` as a use, so webpack drops the polyfill too.
-- So webpack keeps the polyfill in `empty` only because it knows less about `ensure()`. With a wrong `sideEffects` list, the output depends on how much a bundler knows.
-- `barrel`: rolldown, rollup and webpack skip the side-effect-free `index.js` and go straight to `emitter.js`, so the polyfill import in `index.js` goes too. webpack shows this only in `literal`. esbuild keeps it, but the `sideEffects` contract does not require that.
-- `rolldown strict` matches `rolldown` in every row. `empty` + `barrel` passed on 1.0.0-rc.17 only because the barrel's own polyfill import ran first; skipped since 1.2.1 (rolldown#11079).
+All four bundlers use the same `sideEffects` rule:
+
+1. If no code uses the exports of a side-effect-free module, the bundler removes that module.
+2. The bundler also removes the modules that it imports, unless a module that the bundler keeps also imports them.
+
+The bundlers are different on one question only: does the call `ensure();` use the export `ensure`?
+
+- rolldown and esbuild with `minifySyntax` remove a call to an empty function. In `return`, the function is not empty, so they keep the call.
+- rollup removes each call that has no side effect, if no code uses the return value. Thus rollup also removes the call in `return`.
+- webpack and esbuild without `minifySyntax` do not examine function bodies. Thus, for them, the call `ensure();` uses the export `ensure`, so they keep `ensure.js` and the polyfill.
+
+In `literal`, `ensure` is not a function, so no bundler has a function body to examine. For all bundlers, the statement `ensure;` does not use the export `ensure`. Thus webpack also removes the polyfill.
+
+Thus webpack keeps the polyfill in `empty` only because it knows less about `ensure()`. When the `sideEffects` field is wrong, the result of a bundler depends on how much it knows about the code.
+
+rolldown, rollup and webpack connect `barrel.js` directly to `emitter.js`, because `lib/src/index.js` is side-effect-free. Thus they also remove the `import "./polyfill/index.js"` statement in `index.js`. webpack shows this result only in `literal`, because in `empty` it keeps the polyfill through `ensure.js`. esbuild keeps the statement in `index.js`, but the `sideEffects` rule does not require this.
+
+`rolldown strict` gives the same result as `rolldown` in every row. In rolldown 1.0.0-rc.17, the `empty` variant with the `barrel` entry passed when `strictExecutionOrder` was on. The only reason was that the `import "./polyfill/index.js"` statement in `index.js` ran first. Since 1.2.1, rolldown removes that statement in both modes (rolldown#11079).
 
 ## Fix
 
-In the library (`expo-modules-core`), one of:
+Make one of these two changes in the library (`expo-modules-core`):
 
-- `fix-side-effects`: add `ensure.js` (`ensureNativeModulesAreInstalled`) to `sideEffects`.
-- `fix-import`: import the polyfill in `emitter.js` (`EventEmitter.ts`) directly.
+- Add the `ensureNativeModulesAreInstalled` module to the `sideEffects` field. The `fix-side-effects` variant tests this change.
+- Import the polyfill directly in `EventEmitter.ts`. The `fix-import` variant tests this change.
 
-Until the library is fixed, in the app:
+Both changes give `OK` in every bundler. Until a version of `expo-modules-core` has one of these changes, add this option to the rolldown options of your app:
 
 ```js
 treeshake: { moduleSideEffects: (id) => id.includes("/expo-modules-core/") || undefined }
