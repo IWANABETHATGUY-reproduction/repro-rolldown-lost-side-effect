@@ -53,9 +53,7 @@ rolldown 1.2.14       barrel default              FAIL Cannot read properties of
 rolldown 1.2.14       barrel strictExecutionOrder FAIL Cannot read properties of undefined (reading 'EventEmitter')
 ```
 
-The `direct` case fails on every version. The `barrel` case with wrapped modules (`strictExecutionOrder`, or the `__esmMin` wrapping Vite's dependency optimizer produces) used to pass because the wrapped barrel's own `import "./polyfill"` ran first. Since 1.2.1 the wrapped barrel is skipped, as the unwrapped one always was (see rolldown#11079), so only the `ensure()` path is left, and it is dropped.
-
-Bisect of the `barrel` + `strictExecutionOrder` case: passes on 1.0.0-rc.17 to 1.0.3, fails on 1.1.0 to 1.1.3 (`experimental.lazyBarrel` on by default, #9632), passes on 1.1.4 to 1.2.0 (#10071 turned it off), fails from 1.2.1 on.
+The `direct` case fails on every version. The wrapped `barrel` case passed on 1.0.0-rc.17 only because the barrel's own `import "./polyfill"` ran first. Since 1.2.1 that barrel is skipped too (rolldown#11079), so only the dropped `ensure()` path is left.
 
 ## Workaround
 
