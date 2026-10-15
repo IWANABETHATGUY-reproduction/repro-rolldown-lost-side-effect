@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { cp, rm } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import nodeResolve from "@rollup/plugin-node-resolve";
 import * as esbuild from "esbuild";
@@ -9,10 +9,12 @@ import webpack from "webpack";
 const cwd = import.meta.dirname;
 const only = process.argv.slice(2);
 const entries = ["direct", "barrel"];
+// `empty` is `lib/` as is. Every other variant overwrites files in a copy of `lib/` with `variants/<name>/`.
+const variants = ["empty", "return", "literal", "fix-side-effects", "fix-import"];
 
 const bundlers = {
   async rolldown(input, file, options) {
-    const bundle = await rolldown({ input, cwd, logLevel: "silent" });
+    const bundle = await rolldown({ input, cwd: dirname(input), logLevel: "silent" });
     await bundle.write({ file, format: "esm", ...options });
     await bundle.close();
   },
@@ -27,7 +29,7 @@ const bundlers = {
   async webpack(input, file) {
     const compiler = webpack({
       mode: "production",
-      context: cwd,
+      context: dirname(input),
       entry: input,
       output: { path: dirname(file), filename: basename(file), library: { type: "module" } },
       experiments: { outputModule: true },
@@ -38,29 +40,41 @@ const bundlers = {
   },
 };
 
-const cases = [
-  { bundler: "rolldown", version: rolldownVersion, mode: "default", options: {} },
-  { bundler: "rolldown", version: rolldownVersion, mode: "strictExecutionOrder", options: { strictExecutionOrder: true } },
-  { bundler: "rollup", version: rollupVersion, mode: "default" },
-  { bundler: "esbuild", version: esbuild.version, mode: "default", options: {} },
-  { bundler: "esbuild", version: esbuild.version, mode: "minifySyntax", options: { minifySyntax: true } },
-  { bundler: "webpack", version: webpack.version, mode: "production" },
-];
+const columns = [
+  { label: "rolldown", bundler: "rolldown", options: {} },
+  { label: "rolldown strict", bundler: "rolldown", options: { strictExecutionOrder: true } },
+  { label: "rollup", bundler: "rollup" },
+  { label: "esbuild", bundler: "esbuild", options: {} },
+  { label: "esbuild minify", bundler: "esbuild", options: { minifySyntax: true } },
+  { label: "webpack", bundler: "webpack" },
+].filter((column) => only.length === 0 || only.includes(column.bundler));
 
-for (const { bundler, version, mode, options } of cases) {
-  if (only.length > 0 && !only.includes(bundler)) continue;
+const widths = [16, 6, ...columns.map((column) => column.label.length)];
+const line = (cells) => cells.map((cell, i) => cell.padEnd(widths[i])).join("  ").trimEnd();
+
+console.log(`rolldown ${rolldownVersion}, rollup ${rollupVersion}, esbuild ${esbuild.version}, webpack ${webpack.version}\n`);
+console.log(line(["variant", "entry", ...columns.map((column) => column.label)]));
+for (const variant of variants) {
+  const dir = `${cwd}/dist/${variant}`;
+  await rm(dir, { recursive: true, force: true });
+  await cp(`${cwd}/lib`, `${dir}/lib`, { recursive: true });
+  for (const entry of entries) await cp(`${cwd}/${entry}.js`, `${dir}/${entry}.js`);
+  if (variant !== "empty") await cp(`${cwd}/variants/${variant}`, dir, { recursive: true });
   for (const entry of entries) {
-    const dir = `${cwd}/dist/${bundler}/${entry}-${mode}`;
-    await rm(dir, { recursive: true, force: true });
-    await bundlers[bundler](`${cwd}/${entry}.js`, `${dir}/${entry}.js`, options);
-    delete globalThis.expo;
-    let result;
-    try {
-      const { name } = await import(`${dir}/${entry}.js`);
-      result = `OK   EventEmitter.name = ${name}`;
-    } catch (error) {
-      result = `FAIL ${error.message}`;
+    const results = [];
+    for (const { label, bundler, options } of columns) {
+      const file = `${dir}/out/${label.replace(" ", "-")}/${entry}.js`;
+      await bundlers[bundler](`${dir}/${entry}.js`, file, options);
+      delete globalThis.expo;
+      try {
+        await import(file);
+        results.push("OK");
+      } catch (error) {
+        // `globalThis.expo.EventEmitter` with no polyfill: "Cannot read properties of undefined (reading 'EventEmitter')".
+        if (!(error instanceof TypeError)) throw error;
+        results.push("FAIL");
+      }
     }
-    console.log(`${`${bundler} ${version}`.padEnd(16)} ${entry.padEnd(6)} ${mode.padEnd(20)} ${result}`);
+    console.log(line([variant, entry, ...results]));
   }
 }
