@@ -3,8 +3,10 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "rolldown": "1.2.13",
-    "rolldown-rc17": "npm:rolldown@1.0.0-rc.17",
-    "rolldown-latest": "npm:rolldown@1.2.14"
+    "@rollup/plugin-node-resolve": "16.0.3",
+    "esbuild": "0.28.2",
+    "rolldown": "1.2.14",
+    "rollup": "4.64.6",
+    "webpack": "5.111.1"
   }
 }

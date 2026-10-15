@@ -22,35 +22,40 @@ export const EventEmitter = globalThis.expo.EventEmitter;
 
 ```sh
 npm install
-node repro.mjs
+node repro.mjs            # every bundler
+node repro.mjs rolldown   # one bundler
 ```
 
 - `direct.js`: imports `emitter.js` directly.
 - `barrel.js`: through `lib/src/index.js`, a side-effect-free barrel that also imports the polyfill (as `expo-modules-core`'s `index.ts`).
+- rollup reads `sideEffects` through `@rollup/plugin-node-resolve`.
 
 ## Expected
 
-Every line `OK   EventEmitter.name = EventEmitter`. webpack 5 and esbuild (with or without `minifySyntax`) keep the polyfill.
+Every line `OK   EventEmitter.name = EventEmitter`.
 
 ## Actual
 
 ```
-rolldown 1.0.0-rc.17  direct default              FAIL Cannot read properties of undefined (reading 'EventEmitter')
-rolldown 1.0.0-rc.17  direct strictExecutionOrder FAIL Cannot read properties of undefined (reading 'EventEmitter')
-rolldown 1.0.0-rc.17  barrel default              FAIL Cannot read properties of undefined (reading 'EventEmitter')
-rolldown 1.0.0-rc.17  barrel strictExecutionOrder OK   EventEmitter.name = EventEmitter
-rolldown 1.2.13       direct default              FAIL Cannot read properties of undefined (reading 'EventEmitter')
-rolldown 1.2.13       direct strictExecutionOrder FAIL Cannot read properties of undefined (reading 'EventEmitter')
-rolldown 1.2.13       barrel default              FAIL Cannot read properties of undefined (reading 'EventEmitter')
-rolldown 1.2.13       barrel strictExecutionOrder FAIL Cannot read properties of undefined (reading 'EventEmitter')
-rolldown 1.2.14       direct default              FAIL Cannot read properties of undefined (reading 'EventEmitter')
-rolldown 1.2.14       direct strictExecutionOrder FAIL Cannot read properties of undefined (reading 'EventEmitter')
-rolldown 1.2.14       barrel default              FAIL Cannot read properties of undefined (reading 'EventEmitter')
-rolldown 1.2.14       barrel strictExecutionOrder FAIL Cannot read properties of undefined (reading 'EventEmitter')
+rolldown 1.2.14  direct default              FAIL Cannot read properties of undefined (reading 'EventEmitter')
+rolldown 1.2.14  barrel default              FAIL Cannot read properties of undefined (reading 'EventEmitter')
+rolldown 1.2.14  direct strictExecutionOrder FAIL Cannot read properties of undefined (reading 'EventEmitter')
+rolldown 1.2.14  barrel strictExecutionOrder FAIL Cannot read properties of undefined (reading 'EventEmitter')
+rollup 4.64.6    direct default              FAIL Cannot read properties of undefined (reading 'EventEmitter')
+rollup 4.64.6    barrel default              FAIL Cannot read properties of undefined (reading 'EventEmitter')
+esbuild 0.28.2   direct default              OK   EventEmitter.name = EventEmitter
+esbuild 0.28.2   barrel default              OK   EventEmitter.name = EventEmitter
+esbuild 0.28.2   direct minifySyntax         FAIL Cannot read properties of undefined (reading 'EventEmitter')
+esbuild 0.28.2   barrel minifySyntax         OK   EventEmitter.name = EventEmitter
+webpack 5.111.1  direct production           OK   EventEmitter.name = EventEmitter
+webpack 5.111.1  barrel production           OK   EventEmitter.name = EventEmitter
 ```
 
-- `direct`: fails on every version.
-- `barrel` + `strictExecutionOrder`: passed on rc.17 only because the barrel's own polyfill import ran first; skipped since 1.2.1 (rolldown#11079).
+- rolldown: fails on every line.
+- `barrel` + `strictExecutionOrder`: passed on 1.0.0-rc.17 only because the barrel's own polyfill import ran first; skipped since 1.2.1 (rolldown#11079).
+- rollup: same as rolldown.
+- esbuild: `direct` + `minifySyntax` drops the empty call and the polyfill with it.
+- webpack: keeps the polyfill.
 
 ## Workaround
 
