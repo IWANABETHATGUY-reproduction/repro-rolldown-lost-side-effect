@@ -13,9 +13,9 @@ const entries = ["direct", "barrel"];
 const variants = ["empty", "return", "literal", "fix-side-effects", "fix-import"];
 
 const bundlers = {
-  async rolldown(input, file, options) {
+  async rolldown(input, file) {
     const bundle = await rolldown({ input, cwd: dirname(input), logLevel: "silent" });
-    await bundle.write({ file, format: "esm", ...options });
+    await bundle.write({ file, format: "esm" });
     await bundle.close();
   },
   async rollup(input, file) {
@@ -41,8 +41,7 @@ const bundlers = {
 };
 
 const columns = [
-  { label: "rolldown", bundler: "rolldown", options: {} },
-  { label: "rolldown strict", bundler: "rolldown", options: { strictExecutionOrder: true } },
+  { label: "rolldown", bundler: "rolldown" },
   { label: "rollup", bundler: "rollup" },
   { label: "esbuild", bundler: "esbuild", options: {} },
   { label: "esbuild minify", bundler: "esbuild", options: { minifySyntax: true } },

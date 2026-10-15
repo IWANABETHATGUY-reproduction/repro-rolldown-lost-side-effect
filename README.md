@@ -62,17 +62,17 @@ For each variant, `repro.mjs` copies `lib/`, `direct.js` and `barrel.js` into `d
 ```
 rolldown 1.2.14, rollup 4.64.6, esbuild 0.28.2, webpack 5.111.1
 
-variant           entry   rolldown  rolldown strict  rollup  esbuild  esbuild minify  webpack
-empty             direct  FAIL      FAIL             FAIL    OK       FAIL            OK
-empty             barrel  FAIL      FAIL             FAIL    OK       OK              OK
-return            direct  OK        OK               FAIL    OK       OK              OK
-return            barrel  OK        OK               FAIL    OK       OK              OK
-literal           direct  FAIL      FAIL             FAIL    FAIL     FAIL            FAIL
-literal           barrel  FAIL      FAIL             FAIL    OK       OK              FAIL
-fix-side-effects  direct  OK        OK               OK      OK       OK              OK
-fix-side-effects  barrel  OK        OK               OK      OK       OK              OK
-fix-import        direct  OK        OK               OK      OK       OK              OK
-fix-import        barrel  OK        OK               OK      OK       OK              OK
+variant           entry   rolldown  rollup  esbuild  esbuild minify  webpack
+empty             direct  FAIL      FAIL    OK       FAIL            OK
+empty             barrel  FAIL      FAIL    OK       OK              OK
+return            direct  OK        FAIL    OK       OK              OK
+return            barrel  OK        FAIL    OK       OK              OK
+literal           direct  FAIL      FAIL    FAIL     FAIL            FAIL
+literal           barrel  FAIL      FAIL    OK       OK              FAIL
+fix-side-effects  direct  OK        OK      OK       OK              OK
+fix-side-effects  barrel  OK        OK      OK       OK              OK
+fix-import        direct  OK        OK      OK       OK              OK
+fix-import        barrel  OK        OK      OK       OK              OK
 ```
 
 - `OK` means that the bundle runs with no error.
@@ -81,7 +81,6 @@ fix-import        barrel  OK        OK               OK      OK       OK        
 | Column | Options |
 |---|---|
 | `rolldown` | Default options. |
-| `rolldown strict` | `output.strictExecutionOrder: true`. |
 | `rollup` | `@rollup/plugin-node-resolve`, which reads the `sideEffects` field. |
 | `esbuild` | `bundle: true`. |
 | `esbuild minify` | `bundle: true`, `minifySyntax: true`. |
@@ -105,8 +104,6 @@ In `literal`, `ensure` is not a function, so no bundler has a function body to e
 Thus webpack keeps the polyfill in `empty` only because it knows less about `ensure()`. When the `sideEffects` field is wrong, the result of a bundler depends on how much it knows about the code.
 
 rolldown, rollup and webpack connect `barrel.js` directly to `emitter.js`, because `lib/src/index.js` is side-effect-free. Thus they also remove the `import "./polyfill/index.js"` statement in `index.js`. webpack shows this result only in `literal`, because in `empty` it keeps the polyfill through `ensure.js`. esbuild keeps the statement in `index.js`, but the `sideEffects` rule does not require this.
-
-`rolldown strict` gives the same result as `rolldown` in every row. In rolldown 1.0.0-rc.17, the `empty` variant with the `barrel` entry passed when `strictExecutionOrder` was on. The only reason was that the `import "./polyfill/index.js"` statement in `index.js` ran first. Since 1.2.1, rolldown removes that statement in both modes (rolldown#11079).
 
 ## Fix
 
