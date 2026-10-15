@@ -109,8 +109,13 @@ rolldown, rollup and webpack connect `barrel.js` directly to `emitter.js`, becau
 
 Make one of these two changes in the library (`expo-modules-core`):
 
-- Add the `ensureNativeModulesAreInstalled` module to the `sideEffects` field. The `fix-side-effects` variant tests this change.
-- Import the polyfill directly in `EventEmitter.ts`. The `fix-import` variant tests this change.
+- Add `./src/ensureNativeModulesAreInstalled.ts` to the `sideEffects` field in `package.json`. The `fix-side-effects` variant tests this change. For `expo-modules-core` 57.0.23, the field becomes:
+
+  ```json
+  "sideEffects": ["*.fx.ts", "./src/polyfill/*.ts", "./src/ensureNativeModulesAreInstalled.ts"]
+  ```
+
+- Import the polyfill directly in `src/EventEmitter.ts`. The `fix-import` variant tests this change.
 
 Both changes give `OK` in every bundler. Until a version of `expo-modules-core` has one of these changes, add this option to the rolldown options of your app:
 
